@@ -1,10 +1,11 @@
 {
   "domain": "reeffactory_ph",
   "name": "Reef Factory pH Meter",
-  "codeowners": [],
+  "codeowners": ["@dominikhartl"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/dominik/ha-reeffactory-ph",
+  "documentation": "https://github.com/dominikhartl/ha-reeffactory-ph",
+  "homeassistant": "2024.1.0",
   "iot_class": "local_push",
   "requirements": [],
   "version": "1.0.0"
