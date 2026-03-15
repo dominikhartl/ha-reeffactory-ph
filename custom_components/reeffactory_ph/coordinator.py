@@ -101,15 +101,27 @@ class ReeffactoryCoordinator:
     # Connection
     # ------------------------------------------------------------------
 
+    async def _close_connection(self) -> None:
+        """Close existing WebSocket and session if open."""
+        if self._ping_task and not self._ping_task.done():
+            self._ping_task.cancel()
+        if self._ws and not self._ws.closed:
+            await self._ws.close()
+        if self._session and not self._session.closed:
+            await self._session.close()
+        self._ws = None
+        self._session = None
+
     async def _connect(self) -> None:
         """Establish a WebSocket connection to the device."""
         if self._stop_event.is_set():
             return
+        await self._close_connection()
         url = f"ws://{self.host}/{WS_PATH}"
         try:
             self._session = aiohttp.ClientSession()
             self._ws = await self._session.ws_connect(
-                url, protocols=[WS_SUBPROTOCOL]
+                url, protocols=[WS_SUBPROTOCOL], timeout=10
             )
             self._retry_count = 0
             _LOGGER.debug("Connected to %s", url)
@@ -157,12 +169,7 @@ class ReeffactoryCoordinator:
 
     async def _cleanup_and_reconnect(self) -> None:
         """Close current session and schedule reconnect."""
-        if self._ping_task and not self._ping_task.done():
-            self._ping_task.cancel()
-        if self._ws and not self._ws.closed:
-            await self._ws.close()
-        if self._session and not self._session.closed:
-            await self._session.close()
+        await self._close_connection()
         await self._schedule_reconnect()
 
     async def _schedule_reconnect(self) -> None:
@@ -170,12 +177,12 @@ class ReeffactoryCoordinator:
         if self._stop_event.is_set():
             return
         self._retry_count += 1
-        if self._retry_count <= 5:
-            delay = 0.5
+        if self._retry_count <= 3:
+            delay = 5
         elif self._retry_count <= 10:
-            delay = 1.0
+            delay = 15
         else:
-            delay = 2.0
+            delay = 30
         _LOGGER.debug(
             "Reconnecting to %s in %ss (attempt %d)",
             self.host,
@@ -184,7 +191,7 @@ class ReeffactoryCoordinator:
         )
         await asyncio.sleep(delay)
         if not self._stop_event.is_set():
-            await self._connect()
+            self.hass.async_create_task(self._connect())
 
     # ------------------------------------------------------------------
     # Message handling
@@ -248,6 +255,8 @@ class ReeffactoryCoordinator:
                 try:
                     await self._ws.send_bytes(msg)
                 except Exception:
+                    if self._ws and not self._ws.closed:
+                        await self._ws.close()
                     break
                 try:
                     await asyncio.wait_for(
